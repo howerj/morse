@@ -1,0 +1,9 @@
+morse
+*.o
+*.a
+*.exe
+*.dll
+*.so
+*~
+*.txt
+cpp
