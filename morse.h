@@ -32,7 +32,53 @@ extern "C" {
  * then be used whilst walking around to take notes, perform calculations,
  * controlling audio playback and recording and more. This would require
  * dedicated hardware, or an Android phone application and a wireless button
- * to interface with it. It might require too much concentration to use. */
+ * to interface with it. It might require too much concentration to use. 
+ *
+ * There are just two functions that matter in this library, and this library
+ * showcases how header-only libraries can contain the best of both worlds.
+ * The only disadvantage is slower compile times (not much of a problem for
+ * two reasons; this header and implementation is shorter than many headers
+ * for traditional libraries, and I tend to use C, which has better compile 
+ * times than C++).
+ *
+ * Header only libraries are sometimes accused of leading to bloat, this
+ * may be true but it depends on how they are designed, the functions
+ * they provide and how the compiler optimizations. Using "static inline"
+ * functions *MAY* (or *MAY NOT*) lead to faster and *smaller* code as
+ * opposed to traditional libraries, especially if the header only libraries
+ * consists of very short functions. This should be measured and not
+ * conjectured about. By offering the function definitions to the compiler
+ * many more optimizations are possible, but that is not always a win.
+ *
+ * Due to the way this header library is structured it is possible to
+ * instead integrate this header-only library into the build system in
+ * such a way that the functions within it are defined in an object
+ * file or library that can be accessed via the header. It is just a question
+ * about setting the right macros in the right files. It is also possible
+ * to turn on or off unit tests, and even a small command line application
+ * to test the library out. The only persistent disadvantage is the
+ * extra code within the header.
+ *
+ * The philosophy of header-only files, a phenomena of C and C++, one
+ * which should not be replicated or needed in newer languages but
+ * arises due to the peculiarities and history of C/C++, is embodied
+ * with the following points:
+ *
+ * 1. The library should be small.
+ * 2. The functions defined within should not depend on the C standard
+ *    library (especially functions such as malloc, or anything that
+ *    takes a FILE handle). If allocation or file like semantics are
+ *    needed they should be passed in via callbacks.
+ * 3. It should be easy to integrate the library into the build system.
+ * 4. The library should expose a minimal interface and only do one
+ *    thing.
+ *
+ * More points could be added. The second point is good practice for
+ * any C library. This library abides by these points (it does include
+ * <stdio.h> and use the functions within them, but only for an
+ * optional demonstration program).
+ *
+ */
 
 #include <assert.h>
 #include <stdint.h>
@@ -46,9 +92,13 @@ extern "C" {
 #define MORSE_API
 #endif
 
+/* All these functions return negative on failure, and zero or positive on
+ * success. `morse_decode` returns the decoded character or negative on
+ * failure. `morse_tests` returns negative on failure and zero on success
+ * or if the tests are compiled out. */
 MORSE_EXTERN int morse_tests(void);
-MORSE_EXTERN int morse_encode(unsigned char in, unsigned char out[6 /* 5 chars + NUL*/]);
-MORSE_EXTERN int morse_decode(const unsigned char *in);
+MORSE_EXTERN int morse_encode(unsigned char in, unsigned char out[/*static*/ 6 /* 6 = 5 chars + NUL*/]);
+MORSE_EXTERN int morse_decode(const unsigned char *in); /* NUL terminate Morse code character as input */
 
 #ifdef MORSE_IMPLEMENTATION
 
@@ -69,13 +119,15 @@ MORSE_EXTERN int morse_decode(const unsigned char *in);
 
 #define MORSE_CODEC_LENGTH (sizeof(MORSE_CODEC) - 1)
 
-#define MORSE_STRINGIFY(X) #X
-#define MORSE_XSTRINGIFY(X) MORSE_STRINGIFY(X)
-#define MORSE_VERSION_STRING MORSE_XSTRINGIFY(MORSE_VERSION)
-
 /* A possible improvement to this would be to turn this into a state-machine
  * that accepts a single characters at a time until a character pops out
- * or an error condition is reached. */
+ * or an error condition is reached. 
+ *
+ * Other directions include:
+ * - Operating on a string with a length.
+ * - Parsing strings with embedded whitespace, returning the character
+ *   parsed and a pointer into the string parsed so far.
+ */
 MORSE_API int morse_decode(const unsigned char *in) {
 	assert(in);
 	unsigned char out = '?';
@@ -107,7 +159,7 @@ static inline void morse_reverse_char_array(unsigned char * const r, const size_
 
 MORSE_API int morse_encode(unsigned char in, unsigned char out[/*static*/ 6 /* 5 chars + NUL*/]) {
 	assert(out);
-	size_t pos = SIZE_MAX, i = 0;
+	size_t pos = SIZE_MAX, i = 0, next = 0;
 	for (i = 0; i < 6; i++) 
 		out[i] = 0;
 	for (i = 0; i < MORSE_CODEC_LENGTH; i++) {
@@ -119,9 +171,9 @@ MORSE_API int morse_encode(unsigned char in, unsigned char out[/*static*/ 6 /* 5
 	if (pos == SIZE_MAX || MORSE_CODEC[pos] == '*' || MORSE_CODEC[pos] == '?') {
 		return -1;
 	}
-	for (i = 0; pos/2; i++) {
+	for (i = 0; (next = pos >> 1); i++) {
 		out[i] = (pos & 1) ? MORSE_DASH : MORSE_DOT;
-		pos /= 2;
+		pos = next;
 	}
 	morse_reverse_char_array(out, i);
 	return 0;
@@ -141,6 +193,10 @@ MORSE_API int morse_tests(void) {
 	}
 	return 0;
 }
+#else
+MORSE_API int morse_tests(void) {
+	return 0;
+}
 #endif /* MORSE_TESTS */
 
 #ifdef MORSE_MAIN
@@ -148,6 +204,10 @@ MORSE_API int morse_tests(void) {
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+
+#define MORSE_STRINGIFY(X) #X
+#define MORSE_XSTRINGIFY(X) MORSE_STRINGIFY(X)
+#define MORSE_VERSION_STRING MORSE_XSTRINGIFY(MORSE_VERSION)
 
 static int morse_usage(FILE *out, const char *arg0) {
 	assert(out);
@@ -190,6 +250,10 @@ only includes the upper case alphabet.\n\nCharacters:\n\n";
 		return -1;
 	return 0;
 }
+
+#undef MORSE_STRINGIFY
+#undef MORSE_XSTRINGIFY
+#undef MORSE_VERSION_STRING 
 
 int main(int argc, char **argv) {
 	int decode = -1;
